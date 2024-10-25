@@ -26,12 +26,12 @@ ssh-keygen -t rsa -b 4096 -C "pve-backup"
 
 Copy the public key to the DR server:
 ```bash
-ssh-copy-id db-backup@103.191.179.84
+ssh-copy-id db-backup@192.168.10.10
 ```
 
 Verify key-based login:
 ```bash
-ssh db-backup@103.191.179.84
+ssh db-backup@192.168.10.10
 ```
 
 ## 2. Backup Script Setup
@@ -42,9 +42,9 @@ ssh db-backup@103.191.179.84
 
 # Define variables
 DUMP_DIR="/mnt/pve/local-extra-ssd-3/dump/"
-DR_SERVER="db-backup@103.191.179.84:/proxmox_backup_38/"
+DR_SERVER="db-backup@192.168.10.10:/proxmox_backup_38/"
 LOG_FILE="/var/log/rsync_backup.log"
-EMAIL="sysadmin@cefalo.com"
+EMAIL="sysadmin@example.com"
 
 # Sync only .vma.zst files to DR server using SSH
 rsync -avz -e ssh --include='*/' --include='*.vma.zst' --exclude='*' $DUMP_DIR $DR_SERVER > $LOG_FILE 2>&1
@@ -63,7 +63,7 @@ fi
 - `LOG_FILE`: Log file location to record the rsync output
 - `EMAIL`: Email address to receive notifications about backup status
 - The rsync command synchronizes only .vma.zst files, deleting any files on the DR server that no longer exist on the Proxmox server
-- Depending on the rsync result, an email notification is sent to sysadmin@cefalo.com
+- Depending on the rsync result, an email notification is sent to sysadmin@example.com
 
 ## 3. Automate the Backup Process
 
@@ -114,7 +114,7 @@ Example of successful backup email notification:
 ```
 From: root <root@pve38.cefalo.local>
 Subject: PVE-38 DR Backup Successful
-To: sysadmin@cefalo.com
+To: sysadmin@example.com
 
 PVE-38 Dump Backup successfully transferred to Robi Cloud at Wed Mar 20 02:00:01 UTC 2024
 ```
@@ -139,7 +139,7 @@ total 152892
 
 On the DR server, list the backup files:
 ```bash
-ssh db-backup@103.191.179.84
+ssh db-backup@192.168.10.10
 ls /proxmox_backup_38/
 ```
 
@@ -149,7 +149,7 @@ Ensure that the target Proxmox server (pve-38) has enough storage to accommodate
 #### 6.1.3. Verify Network Connectivity
 Ensure network connectivity between the Proxmox and DR servers. Test SSH access if needed:
 ```bash
-ssh db-backup@103.191.179.84
+ssh db-backup@192.168.10.10
 ```
 
 ### 6.2. Transfer Backup Files from DR Server to Proxmox Server
@@ -157,7 +157,7 @@ ssh db-backup@103.191.179.84
 #### 6.2.1. Retrieve Backup Files
 Use rsync to transfer the VM dump file from the DR server to the Proxmox server:
 ```bash
-rsync -avz -e ssh db-backup@103.191.179.84:/proxmox_backup_38/<vm-backup-file>.vma.zst /mnt/pve/local-extra-ssd-3/dump/
+rsync -avz -e ssh db-backup@192.168.10.10:/proxmox_backup_38/<vm-backup-file>.vma.zst /mnt/pve/local-extra-ssd-3/dump/
 ```
 Replace `<vm-backup-file>` with the name of the VM backup file to be restored.
 
