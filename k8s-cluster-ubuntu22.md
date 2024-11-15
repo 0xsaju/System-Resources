@@ -164,3 +164,39 @@ If nodes are not showing as Ready:
 - Check logs: `journalctl -xeu kubelet`
 - Ensure containerd is running: `systemctl status containerd`
 - Verify network connectivity between nodes
+
+## Single Line Kubernetes Installation
+
+For a quick and easy Kubernetes installation, you can use the following single line command to set up a K3s cluster:
+
+### Master Node Setup
+
+```bash
+sudo ufw disable && curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--tls-san 192.168.10.10 --write-kubeconfig=/home/user/.kube/config --write-kubeconfig-mode=644 --disable traefik' sh -
+```
+
+This command will:
+
+- Disable UFW (Uncomplicated Firewall).
+- Download and install K3s, a lightweight Kubernetes distribution.
+- Configure K3s with the specified options:
+    - `--tls-san 192.168.10.10`: Add a Subject Alternative Name for the Kubernetes API server.
+    - `--write-kubeconfig=/home/user/.kube/config`: Write the kubeconfig file to the specified path.
+    - `--write-kubeconfig-mode=644`: Set the permissions for the kubeconfig file.
+    - `--disable traefik`: Disable the default Traefik ingress controller.
+
+After running this command, your K3s cluster will be up and running with the specified configuration.
+
+### Worker Node Setup
+
+Find the token using:
+
+```bash
+sudo cat /var/lib/rancher/k3s/server/node-token
+```
+
+Then run:
+
+```bash
+sudo ufw disable && curl -sfL https://get.k3s.io | K3S_URL=https://192.168.10.10:6443 K3S_TOKEN=<TOKEN> sh -
+```
