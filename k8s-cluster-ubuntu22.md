@@ -1,202 +1,237 @@
-# Kubernetes Cluster Setup Guide - Ubuntu 22.04
+# Comprehensive Kubernetes Cluster Deployment Guide
+## Ubuntu 22.04 LTS
 
-## Prerequisites Configuration (On All Nodes)
+This guide provides step-by-step instructions for setting up a production-ready Kubernetes cluster using Ubuntu 22.04 LTS. The setup includes one master node and multiple worker nodes using containerd as the container runtime.
 
-### Update System and Set Hostnames
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [Initial System Configuration](#initial-system-configuration)
+- [Container Runtime Installation](#container-runtime-installation)
+- [Kubernetes Installation](#kubernetes-installation)
+- [Master Node Setup](#master-node-setup)
+- [Worker Node Setup](#worker-node-setup)
+- [Verification Steps](#verification-steps)
+- [Alternative: Quick K3s Setup](#alternative-quick-k3s-setup)
+- [Troubleshooting Guide](#troubleshooting-guide)
 
+## Prerequisites
+
+### Hardware Requirements
+- Master Node: 2 CPU cores, 2GB RAM minimum
+- Worker Nodes: 1 CPU core, 2GB RAM minimum
+- All nodes must have Ubuntu 22.04 LTS installed
+- Stable network connectivity between all nodes
+
+### Network Requirements
+- Unique hostname for each node
+- Static IP addresses for all nodes
+- Open ports:
+  - Master Node: 6443, 2379-2380, 10250-10252
+  - Worker Nodes: 10250, 30000-32767
+
+## Initial System Configuration
+
+### 1. Update System and Set Hostnames
+Run on each node with appropriate hostname:
 ```bash
-# On master node
-sudo hostnamectl set-hostname master
-# On worker1
-sudo hostnamectl set-hostname cluster1
-# On worker2
-sudo hostnamectl set-hostname cluster2
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Set hostname according to node role
+# On master node:
+sudo hostnamectl set-hostname k8s-master
+# On worker nodes:
+sudo hostnamectl set-hostname k8s-worker-1  # For first worker
+sudo hostnamectl set-hostname k8s-worker-2  # For second worker
 ```
 
-### Update `/etc/hosts` on all nodes
-
+### 2. Configure Host Resolution
+Add to `/etc/hosts` on all nodes:
 ```bash
-sudo nano /etc/hosts
+sudo tee -a /etc/hosts <<EOF
+192.168.60.101 k8s-master
+192.168.60.102 k8s-worker-1
+192.168.60.103 k8s-worker-2
+EOF
 ```
 
-Add these lines:
-```
-192.168.60.101 master
-192.168.60.102 cluster1
-192.168.60.103 cluster2
-```
-
-### Disable swap on all nodes
-
+### 3. Disable Swap
+Execute on all nodes:
 ```bash
+# Disable swap immediately
 sudo swapoff -a
-sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+# Disable swap permanently
+sudo sed -i '/swap/s/^\(.*\)$/#\1/g' /etc/fstab
 ```
 
-### Load required kernel modules
-
+### 4. Configure Kernel Modules
+Execute on all nodes:
 ```bash
-cat << EOF | sudo tee /etc/modules-load.d/k8s.conf
+# Load required modules
+sudo tee /etc/modules-load.d/k8s.conf <<EOF
 overlay
 br_netfilter
 EOF
 
+# Apply modules
 sudo modprobe overlay
 sudo modprobe br_netfilter
-```
 
-### Configure kernel parameters
-
-```bash
-cat << EOF | sudo tee /etc/sysctl.d/k8s.conf
+# Configure kernel parameters
+sudo tee /etc/sysctl.d/k8s.conf <<EOF
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
 
+# Apply sysctl parameters
 sudo sysctl --system
 ```
 
-## Install Container Runtime (On All Nodes)
+## Container Runtime Installation
 
-### Install containerd
-
+### Install and Configure containerd
+Execute on all nodes:
 ```bash
 # Install prerequisites
 sudo apt-get update
-sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+sudo apt-get install -y apt-transport-https ca-certificates curl gnupg software-properties-common
 
 # Install containerd
-sudo apt-get update
 sudo apt-get install -y containerd
 
-# Configure containerd
+# Create default configuration
 sudo mkdir -p /etc/containerd
-containerd config default | sudo tee /etc/containerd/config.toml
+sudo containerd config default | sudo tee /etc/containerd/config.toml
 
-# Update containerd config to use SystemdCgroup
-sudo sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+# Enable SystemdCgroup
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
 
 # Restart containerd
 sudo systemctl restart containerd
 sudo systemctl enable containerd
 ```
 
-## Install Kubernetes Components (On All Nodes)
+## Kubernetes Installation
 
-### Add Kubernetes repository
-
+### Install Kubernetes Components
+Execute on all nodes:
 ```bash
 # Add Kubernetes signing key
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
 # Add Kubernetes repository
 echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-```
 
-### Install Kubernetes components
-
-```bash
+# Install Kubernetes components
 sudo apt-get update
 sudo apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 ```
 
-## Initialize Master Node (On Master Only)
+## Master Node Setup
 
-### Initialize the cluster
-
+### Initialize Kubernetes Cluster
+Execute only on master node:
 ```bash
-sudo kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address=192.168.60.101
-```
+sudo kubeadm init \
+  --pod-network-cidr=10.244.0.0/16 \
+  --apiserver-advertise-address=192.168.60.101
 
-### Set up kubectl for the root user
-
-```bash
+# Configure kubectl
 mkdir -p $HOME/.kube
 sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
-### Install Calico network plugin
-
+### Install Network Plugin (Calico)
+Execute on master node:
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/calico.yaml
 ```
 
-### Get join command
+## Worker Node Setup
 
+### Join Workers to Cluster
+1. On master node, generate join command:
 ```bash
 kubeadm token create --print-join-command
 ```
 
-## Join Worker Nodes (On Worker Nodes)
-
-### Run the join command obtained from the master node
-
+2. Execute the generated command on each worker node:
 ```bash
-# Example (actual command will be different)
-sudo kubeadm join 192.168.60.101:6443 --token xxxxxx.xxxxxxxxxxxxxxxx \
-    --discovery-token-ca-cert-hash sha256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+sudo kubeadm join 192.168.60.101:6443 \
+  --token <token> \
+  --discovery-token-ca-cert-hash sha256:<hash>
 ```
 
-## Verify Cluster Setup (On Master Node)
+## Verification Steps
 
-### Check node status
-
+### Verify Cluster Status
+Execute on master node:
 ```bash
+# Check node status
 kubectl get nodes
+
+# Check system pods
+kubectl get pods -n kube-system
 ```
 
-Expected output:
+Expected output for nodes:
 ```
-NAME      STATUS   ROLES           AGE     VERSION
-master    Ready    control-plane   5m      v1.29.x
-cluster1  Ready    <none>          3m      v1.29.x
-cluster2  Ready    <none>          3m      v1.29.x
+NAME          STATUS   ROLES           AGE    VERSION
+k8s-master    Ready    control-plane   5m     v1.29.x
+k8s-worker-1  Ready    <none>          3m     v1.29.x
+k8s-worker-2  Ready    <none>          3m     v1.29.x
 ```
 
-## Troubleshooting
+## Alternative: Quick K3s Setup
 
-If nodes are not showing as Ready:
+For a lightweight alternative, you can use K3s:
 
-- Check pod status: `kubectl get pods -n kube-system`
-- Check logs: `journalctl -xeu kubelet`
-- Ensure containerd is running: `systemctl status containerd`
-- Verify network connectivity between nodes
-
-## Single Line Kubernetes Installation
-
-For a quick and easy Kubernetes installation, you can use the following single line command to set up a K3s cluster:
-
-### Master Node Setup
-
+### Master Node
 ```bash
-sudo ufw disable && curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--tls-san 192.168.10.10 --write-kubeconfig=/home/user/.kube/config --write-kubeconfig-mode=644 --disable traefik' sh -
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='--tls-san 192.168.10.10 --write-kubeconfig=/home/user/.kube/config --write-kubeconfig-mode=644 --disable traefik' sh -
 ```
 
-This command will:
-
-- Disable UFW (Uncomplicated Firewall).
-- Download and install K3s, a lightweight Kubernetes distribution.
-- Configure K3s with the specified options:
-    - `--tls-san 192.168.10.10`: Add a Subject Alternative Name for the Kubernetes API server.
-    - `--write-kubeconfig=/home/user/.kube/config`: Write the kubeconfig file to the specified path.
-    - `--write-kubeconfig-mode=644`: Set the permissions for the kubeconfig file.
-    - `--disable traefik`: Disable the default Traefik ingress controller.
-
-After running this command, your K3s cluster will be up and running with the specified configuration.
-
-### Worker Node Setup
-
-Find the token using:
-
+### Worker Nodes
 ```bash
-sudo cat /var/lib/rancher/k3s/server/node-token
+# Get token from master
+TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
+
+# Join worker
+curl -sfL https://get.k3s.io | K3S_URL=https://192.168.10.10:6443 K3S_TOKEN=$TOKEN sh -
 ```
 
-Then run:
+## Troubleshooting Guide
 
+### Common Issues and Solutions
+
+1. **Nodes Not Ready**
+   - Check kubelet status: `systemctl status kubelet`
+   - View kubelet logs: `journalctl -xeu kubelet`
+   - Verify network plugin pods: `kubectl get pods -n kube-system`
+
+2. **Network Issues**
+   - Verify node connectivity: `ping <node-ip>`
+   - Check required ports: `netstat -plnt`
+   - Review calico pods: `kubectl get pods -n calico-system`
+
+3. **Pod Network Issues**
+   - Check CNI configuration: `ls /etc/cni/net.d/`
+   - Verify calico installation: `kubectl get pods -n calico-system`
+   - Review pod logs: `kubectl logs -n calico-system <calico-pod-name>`
+
+### Reset Cluster
+If you need to start over:
 ```bash
-sudo ufw disable && curl -sfL https://get.k3s.io | K3S_URL=https://192.168.10.10:6443 K3S_TOKEN=<TOKEN> sh -
+# On master
+sudo kubeadm reset
+# On workers
+sudo kubeadm reset
+# Then remove configuration
+rm -rf ~/.kube
 ```
+
+For additional help or specific issues, consult the [official Kubernetes documentation](https://kubernetes.io/docs/setup/).
